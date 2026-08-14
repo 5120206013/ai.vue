@@ -1,0 +1,105 @@
+@use 'variables' as *;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: $text-primary;
+  background: $bg-white;
+  overflow: hidden;
+}
+
+// 滚动条美化
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: $gray-300;
+  border-radius: 10px;
+  &:hover {
+    background: $gray-400;
+  }
+}
+
+// 工具类
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity $transition-normal;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all $transition-normal;
+}
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+// ============================================================
+//  NL2SQL 查询结果表格样式（v-html 渲染，需全局样式）
+// ============================================================
+.nl2sql-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 6px;
+}
+
+.nl2sql-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+
+  th, td {
+    padding: 6px 10px;
+    text-align: left;
+    border: 1px solid #e0e0e0;
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  th {
+    background: #f0f4f8;
+    font-weight: 600;
+    color: #333;
+  }
+
+  td {
+    background: white;
+    color: #444;
+  }
+
+  tbody tr:hover td {
+    background: #f8fafc;
+  }
+}
+
+.nl2sql-row-count {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+}
