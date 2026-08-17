@@ -8,7 +8,7 @@
  *   POST /api/chat/{sessionId}/clear     清除会话
  */
 
-const API_BASE = '/api'
+const API_BASE = 'http://47.109.206.24/api'
 
 /**
  * 发送聊天消息
