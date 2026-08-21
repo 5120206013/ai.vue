@@ -30,6 +30,19 @@
 
     <!-- 会话列表 -->
     <div class="session-list">
+      <!-- 当前新建中的对话（尚未产生会话时高亮显示） -->
+      <div
+        v-if="!activeId"
+        class="session-item new-session-item"
+        :class="{ active: true }"
+        @click="$emit('newChat')"
+      >
+        <div class="session-main">
+          <span class="session-title">新对话</span>
+          <span class="session-time">当前</span>
+        </div>
+      </div>
+
       <div v-if="sessions.length === 0" class="session-empty">暂无历史对话</div>
       <div
         v-for="s in sessions"
@@ -227,6 +240,12 @@ function formatTime(ts) {
     background: $brand-primary-light;
     .session-title { color: $brand-primary; font-weight: 600; }
   }
+}
+
+.new-session-item .session-title::before {
+  content: '+';
+  margin-right: 6px;
+  font-weight: 700;
 }
 
 .session-main {

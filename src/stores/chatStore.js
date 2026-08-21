@@ -13,8 +13,18 @@ export const useChatStore = defineStore('chat', () => {
   const hasRated = ref(false)
   const isInternalDataMode = ref(false)
   const showRagPanel = ref(false)
+  const toast = ref('')
+  let toastTimer = null
+  const showNewChatConfirm = ref(false)
+
+  // 会话标题（本地维护，后端标题为空时用首句摘要兜底）
+  const sessionTitles = ref({})
+
+  // 会话历史本地缓存（后端 history 接口不可用时的兜底）
+  const sessionCache = ref({})
 
   let abortController = null
+  let requestSeq = 0
 
   // ========== 会话列表（来自后端） ==========
   const sessions = ref([])
@@ -22,18 +32,64 @@ export const useChatStore = defineStore('chat', () => {
   /** 从后端拉取会话列表 */
   async function refreshSessions() {
     const list = await listSessions()
-    if (list.length > 0) {
-      sessions.value = list.map(s => ({
-        sessionId: s.sessionId,
-        title: s.title || '未命名对话',
-        createdAt: s.createdAt,
-      })).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-    }
+    sessions.value = list.map(s => ({
+      sessionId: s.sessionId,
+      title: sessionTitles.value[s.sessionId] || s.title || '未命名对话',
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt || s.createdAt,
+    })).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+  }
+
+  // ========== 会话标题（本地兜底） ==========
+  function loadTitles() {
+    try {
+      const raw = localStorage.getItem('lakala_cs_titles')
+      if (raw) sessionTitles.value = JSON.parse(raw) || {}
+    } catch { /* ignore */ }
+  }
+
+  function persistTitles() {
+    localStorage.setItem('lakala_cs_titles', JSON.stringify(sessionTitles.value))
+  }
+
+  function deriveTitle(text) {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim()
+    if (!clean) return '新对话'
+    return clean.length > 20 ? clean.slice(0, 20) + '…' : clean
+  }
+
+  function setSessionTitle(sid, title) {
+    if (!sid) return
+    sessionTitles.value[sid] = title
+    persistTitles()
+  }
+
+  function loadSessionCache() {
+    try {
+      const raw = localStorage.getItem('lakala_cs_sessions')
+      if (raw) sessionCache.value = JSON.parse(raw) || {}
+    } catch { /* ignore */ }
+  }
+
+  function persistSessionCache() {
+    // 控制体积：每个会话最多 30 条，最多保留 15 个会话
+    const trimmed = {}
+    Object.entries(sessionCache.value)
+      .slice(-15)
+      .forEach(([sid, msgs]) => {
+        trimmed[sid] = (Array.isArray(msgs) ? msgs : []).slice(-30)
+      })
+    sessionCache.value = trimmed
+    localStorage.setItem('lakala_cs_sessions', JSON.stringify(trimmed))
   }
 
   /** 删除会话（调后端清除 + 刷新列表） */
   async function removeSession(sid) {
     await clearSession(sid)
+    delete sessionTitles.value[sid]
+    persistTitles()
+    delete sessionCache.value[sid]
+    persistSessionCache()
     if (sid === sessionId.value) {
       sessionId.value = ''
       messages.value = []
@@ -50,6 +106,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // ========== 初始化 ==========
   async function init() {
+    // 0. 恢复本地维护的会话标题与历史缓存
+    loadTitles()
+    loadSessionCache()
+
     // 1. 从后端拉取会话列表
     await refreshSessions()
 
@@ -105,6 +165,12 @@ export const useChatStore = defineStore('chat', () => {
         hasRated: hasRated.value,
       })
     )
+
+    // 同步归档到按会话的本地缓存，供后端 history 不可用时兜底
+    if (sessionId.value) {
+      sessionCache.value[sessionId.value] = messages.value.slice(-30)
+      persistSessionCache()
+    }
   }
 
   // ========== 消息操作 ==========
@@ -123,6 +189,8 @@ export const useChatStore = defineStore('chat', () => {
     const isFirstInSession = messages.value.length === 0
     addMessage({ role: 'user', content: content.trim() })
 
+    // 每次发送递增序号，用于丢弃被「新建对话/新请求」取代的过期响应
+    const seq = ++requestSeq
     abortController = new AbortController()
     const aiMsg = { role: 'assistant', content: '', timestamp: Date.now() }
     addMessage(aiMsg)
@@ -142,6 +210,8 @@ export const useChatStore = defineStore('chat', () => {
           ? await analyzeDatabase(actualQuery)
           : await queryNl2sql(actualQuery)
 
+        if (seq !== requestSeq) return
+
         const last = messages.value[messages.value.length - 1]
         if (last && last.role === 'assistant') {
           last.content = reply || '抱歉，未查询到相关数据。'
@@ -155,12 +225,19 @@ export const useChatStore = defineStore('chat', () => {
           { signal: abortController.signal }
         )
 
+        if (seq !== requestSeq) return
+
+        const isNewSession = !sessionId.value
         if (backendId) {
           sessionId.value = backendId
+          // 新会话首条消息：用首句摘要生成标题，侧边栏可区分
+          if (isNewSession && !sessionTitles.value[backendId]) {
+            setSessionTitle(backendId, deriveTitle(content.trim()))
+          }
         }
 
         // 新会话 — 刷新会话列表以展示在后端
-        if (isFirstInSession || !sessionId.value) {
+        if (isFirstInSession || isNewSession) {
           await refreshSessions()
         }
 
@@ -170,6 +247,9 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
     } catch (err) {
+      // 过期请求的错误直接忽略，避免污染新会话
+      if (seq !== requestSeq) return
+
       if (err.name === 'AbortError') {
         const last = messages.value[messages.value.length - 1]
         if (last && last.role === 'assistant' && !last.content) {
@@ -183,8 +263,11 @@ export const useChatStore = defineStore('chat', () => {
         console.error('发送消息失败:', err)
       }
     } finally {
-      isStreaming.value = false
-      abortController = null
+      // 仅当本次请求仍是「当前请求」时重置状态，避免被过期请求覆盖
+      if (seq === requestSeq) {
+        isStreaming.value = false
+        abortController = null
+      }
       persist()
     }
   }
@@ -247,6 +330,11 @@ export const useChatStore = defineStore('chat', () => {
         content: m.content || m.reply || '',
         timestamp: m.timestamp || Date.now(),
       }))
+      sessionCache.value[sid] = messages.value
+      persistSessionCache()
+    } else if (sessionCache.value[sid]?.length > 0) {
+      // 后端历史拿不到时，用本地缓存兜底
+      messages.value = sessionCache.value[sid]
     } else {
       messages.value = []
     }
@@ -272,6 +360,8 @@ export const useChatStore = defineStore('chat', () => {
   async function clearServerSession() {
     if (sessionId.value) {
       await clearSession(sessionId.value)
+      delete sessionCache.value[sessionId.value]
+      persistSessionCache()
       await refreshSessions()
     }
     sessionId.value = ''
@@ -282,11 +372,43 @@ export const useChatStore = defineStore('chat', () => {
 
   // ========== 新建对话 ==========
   function newChat() {
-    persist()
+    // AI 正在回复时先二次确认，避免误触打断
+    if (isStreaming.value) {
+      showNewChatConfirm.value = true
+      return
+    }
+    doNewChat()
+  }
+
+  function confirmNewChat() {
+    showNewChatConfirm.value = false
+    doNewChat()
+  }
+
+  function cancelNewChat() {
+    showNewChatConfirm.value = false
+  }
+
+  function doNewChat() {
+    // 使进行中的请求失效，避免旧回复回填到新会话
+    requestSeq++
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    isStreaming.value = false
+    isTransferring.value = false
+    showTransfer.value = false
+    showRating.value = false
+
     sessionId.value = ''
     messages.value = []
     hasRated.value = false
     persist()
+
+    // 刷新会话列表，确保刚才的对话仍保留在侧边栏
+    refreshSessions()
+
   }
 
   /** 切换内部数据查询模式 */
@@ -304,6 +426,7 @@ export const useChatStore = defineStore('chat', () => {
     showRagPanel.value = !showRagPanel.value
   }
 
+
   return {
     messages, sessionId, isStreaming,
     showTransfer, showRating, isTransferring,
@@ -314,8 +437,10 @@ export const useChatStore = defineStore('chat', () => {
     toggleTransfer, confirmTransfer,
     toggleRating, confirmRating,
     switchSession, refreshHistory, clearServerSession, newChat,
+    confirmNewChat, cancelNewChat, showNewChatConfirm,
     removeSession, refreshSessions,
     toggleInternalDataMode,
     showRagPanel, toggleRagPanel,
+    toast,
   }
 })

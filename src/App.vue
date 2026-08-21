@@ -5,7 +5,7 @@
       :sessions="store.sessions"
       :active-id="store.sessionId"
       :collapsed="sidebarCollapsed"
-      @new-chat="store.newChat"
+      @new-chat="onNewChat"
       @switch="store.switchSession"
       @delete="store.removeSession"
       @collapse="sidebarCollapsed = true"
@@ -75,6 +75,24 @@
       v-if="store.showRagPanel"
       @close="store.showRagPanel = false"
     />
+
+    <!-- 新建对话二次确认 -->
+    <ConfirmDialog
+      v-if="store.showNewChatConfirm"
+      title="新建对话"
+      message="当前回复尚未完成，新建对话将中断本次回复，确定继续吗？"
+      hint="之前的对话会保留在左侧会话列表中。"
+      confirm-text="新建对话"
+      cancel-text="取消"
+      danger
+      @confirm="store.confirmNewChat"
+      @cancel="store.cancelNewChat"
+    />
+
+    <!-- 全局轻提示 -->
+    <Transition name="toast">
+      <div v-if="store.toast" class="toast">{{ store.toast }}</div>
+    </Transition>
   </div>
 </template>
 
@@ -89,10 +107,16 @@ import MoreMenu from './components/MoreMenu.vue'
 import TransferConfirm from './components/TransferConfirm.vue'
 import StarRating from './components/StarRating.vue'
 import RagDocumentPanel from './components/RagDocumentPanel.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 
 const store = useChatStore()
 const showMore = ref(false)
 const sidebarCollapsed = ref(false)
+
+function onNewChat() {
+  showMore.value = false
+  store.newChat()
+}
 
 // 客服模式快捷问题
 const defaultQuestions = [
@@ -150,5 +174,30 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   background: $bg-white;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  background: rgba(30, 41, 59, 0.9);
+  color: #fff;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 20px;
+  z-index: 10001;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
 }
 </style>

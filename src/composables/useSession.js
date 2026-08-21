@@ -8,7 +8,8 @@ export function useSession() {
 
   return {
     sessionId: store.sessionId,
-    clearMessages: store.clearMessages,
     hasRated: store.hasRated,
+    newChat: store.newChat,
+    clearSession: store.clearServerSession,
   }
 }

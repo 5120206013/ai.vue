@@ -8,7 +8,7 @@
  *   POST /api/chat/{sessionId}/clear     清除会话
  */
 
-const API_BASE = 'https://zcfuture.me/api'
+const API_BASE = '/api'
 /**
  * 发送聊天消息
  * POST /api/chat
